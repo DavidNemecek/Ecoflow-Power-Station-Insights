@@ -1,21 +1,41 @@
-# Ecoflow-Power-Station-Insights
-This Repo contains a simple script which can be used to grab the Cell voltages overe time. Afterwards you can display them via the Website. The purpouse is to check how the individual cells are behaving over time.
+# Ecoflow Power Station Insights
 
-## Demo Files to see what ecoflow_cells_csv.py produziert
+Collect and visualize per-cell voltage data from an **EcoFlow Delta Pro** (and attached Extra Batteries) via the EcoFlow developer API.
 
-Good Battery: demo\cell_voltages_slave_port1_charge.csv
-Bad Battery: demo\cell_voltages_master_charge.csv
+## Why this exists (result)
 
-## How the script works
+This project was created to identify the cell behavior of an **EcoFlow Delta Pro** over time. In my case, the result was that it was **not a balancing problem**, but a **defective cell in the main battery**.
 
-.....
+## Scripts
 
-## Where to get the API Keys
+- [`ecoflow_cells_csv.py`](ecoflow_cells_csv.py): For a Delta Pro with **one** Extra Battery attached on **Port 1** (`SLAVE_BMS_PORT=1`). This setup is **known to work** (see the demo CSVs).
+- [`ecoflow_cells_csv_dualExtentionBattery.py`](ecoflow_cells_csv_dualExtentionBattery.py): Intended for a Delta Pro with extra batteries attached. It **should work with any number of extra batteries attached to the main unit**, but this is **not fully tested**.
 
-Make Account: https://developer-eu.ecoflow.com/us
+## Demo CSVs
 
-Create Keys: https://developer-eu.ecoflow.com/us/security
+- Good battery example: `demo/cell_voltages_slave_port1_charge.csv`
+- Defective-cell example (main battery): `demo/cell_voltages_master_charge.csv`
 
-Find Serial Number in Ecoflow APP
+## Quickstart
 
-=> Go to your battery, then settings, then Specifications, then you should see your Serial Number (probably also on the device itself)
+1. Install dependencies:
+   - `pip install requests python-dotenv`
+2. Create your `.env` (copy and fill in):
+   - `copy example.env .env`
+3. Run a collector:
+   - `python ecoflow_cells_csv.py`
+   - `python ecoflow_cells_csv_dualExtentionBattery.py`
+4. Visualize the CSV:
+   - Open `gui/GUI.html` (or `gui/index.html`) in your browser and load the generated `.csv` file(s).
+
+## Docker
+
+- Create `.env` from `example.env`, then run: `docker compose up --build`
+- Default script is `ecoflow_cells_csv_dualExtentionBattery.py`. Switch via `ECOFLOW_SCRIPT=ecoflow_cells_csv.py`.
+
+## Where to get the API keys
+
+- Create an account: <https://developer-eu.ecoflow.com/us>
+- Create keys: <https://developer-eu.ecoflow.com/us/security>
+- Find the serial number in the EcoFlow app:
+  - Battery -> Settings -> Specifications -> Serial Number (often also on the device label).
