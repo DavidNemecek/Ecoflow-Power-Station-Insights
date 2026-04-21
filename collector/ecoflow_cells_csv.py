@@ -6,8 +6,8 @@ import hmac
 import json
 import logging
 import os
-import random
 import re
+import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,7 +61,7 @@ def build_query_string(params: dict) -> str:
 
 
 def ecoflow_get(url: str, access_key: str, secret_key: str, params: dict | None = None) -> dict:
-    nonce = str(random.randint(100000, 999999))
+    nonce = secrets.token_hex(16)
     timestamp = str(int(time.time() * 1000))
 
     headers = {
