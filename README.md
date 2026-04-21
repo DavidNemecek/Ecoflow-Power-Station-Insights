@@ -2,6 +2,10 @@
 
 Collect and visualize per-cell voltage data from an **EcoFlow Delta Pro** (and attached Extra Batteries) via the EcoFlow developer API.
 
+## Website (viewer)
+
+- Live viewer: <https://davidnemecek.github.io/Ecoflow-Power-Station-Insights/>
+
 ## Why this exists (result)
 
 This project was created to identify the cell behavior of an **EcoFlow Delta Pro** over time. In my case, the result was that it was **not a balancing problem**, but a **defective cell in the main battery**.
@@ -18,15 +22,28 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 
 ## Quickstart
 
+### Option 1: Docker (recommended)
+
+1. Create your `.env` (copy and fill in):
+   - `copy example.env .env`
+2. Run the collector:
+   - `docker compose up --build`
+3. Find the CSVs in `output/` and open them in the viewer:
+   - <https://davidnemecek.github.io/Ecoflow-Power-Station-Insights/>
+   - or `gui/GUI.html` locally
+
+### Option 2: Run with Python
+
 1. Install dependencies:
-   - `pip install requests python-dotenv`
+   - `pip install -r requirements.txt`
 2. Create your `.env` (copy and fill in):
    - `copy example.env .env`
 3. Run a collector:
    - `python collector/ecoflow_cells_csv.py`
    - `python collector/ecoflow_cells_csv_dualExtentionBattery.py`
 4. Visualize the CSV:
-   - Open `gui/GUI.html` (or `gui/index.html`) in your browser and load the generated `.csv` file(s).
+   - <https://davidnemecek.github.io/Ecoflow-Power-Station-Insights/>
+   - or `gui/GUI.html` locally
 
 ## Docker
 
