@@ -27,7 +27,7 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 1. Create your `.env` (copy and fill in):
    - `copy example.env .env`
 2. Run the collector:
-   - `docker compose up --build`
+   - `docker compose pull && docker compose up -d`
 3. Find the CSVs in `output/` and open them in the viewer:
    - <https://davidnemecek.github.io/Ecoflow-Power-Station-Insights/>
    - or `gui/GUI.html` locally
