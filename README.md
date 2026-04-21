@@ -27,7 +27,7 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 1. Create your `.env` (copy and fill in):
    - `copy example.env .env`
 2. Run the collector:
-   - `docker compose up --build -d`
+   - `docker compose pull && docker compose up -d`
    - Optional: set `LOG_LEVEL=debug` (or `info`, `warning`, `error`) in your `.env`
    - Optional: set `MINUTES=60` in your `.env` (if omitted, it runs forever and logs a warning)
 3. Find the CSVs in `output/` and open them in the viewer:
@@ -49,7 +49,7 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 
 ## Docker
 
-- Create `.env` from `example.env`, then run: `docker compose up --build`
+- Create `.env` from `example.env`, then run: `docker compose pull && docker compose up -d`
 - Default script is `ecoflow_cells_csv_dualExtentionBattery.py`. Switch via `ECOFLOW_SCRIPT=ecoflow_cells_csv.py`.
 - Set log verbosity with `LOG_LEVEL=debug|info|warning|error`.
 - Set runtime via `MINUTES=60` (if omitted, it runs forever and logs a warning).
