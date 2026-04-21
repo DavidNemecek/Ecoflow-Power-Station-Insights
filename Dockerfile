@@ -10,8 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY ecoflow_cells_csv.py /app/ecoflow_cells_csv.py
-COPY ecoflow_cells_csv_dualExtentionBattery.py /app/ecoflow_cells_csv_dualExtentionBattery.py
+COPY collector /app/collector
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

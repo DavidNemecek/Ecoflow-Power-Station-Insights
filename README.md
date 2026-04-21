@@ -8,8 +8,8 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 
 ## Scripts
 
-- [`ecoflow_cells_csv.py`](ecoflow_cells_csv.py): For a Delta Pro with **one** Extra Battery attached on **Port 1** (`SLAVE_BMS_PORT=1`). This setup is **known to work** (see the demo CSVs).
-- [`ecoflow_cells_csv_dualExtentionBattery.py`](ecoflow_cells_csv_dualExtentionBattery.py): Intended for a Delta Pro with extra batteries attached. It **should work with any number of extra batteries attached to the main unit**, but this is **not fully tested**.
+- [`collector/ecoflow_cells_csv.py`](collector/ecoflow_cells_csv.py): For a Delta Pro with **one** Extra Battery attached on **Port 1** (`SLAVE_BMS_PORT=1`). This setup is **known to work** (see the demo CSVs).
+- [`collector/ecoflow_cells_csv_dualExtentionBattery.py`](collector/ecoflow_cells_csv_dualExtentionBattery.py): Intended for a Delta Pro with extra batteries attached. It **should work with any number of extra batteries attached to the main unit**, but this is **not fully tested**.
 
 ## Demo CSVs
 
@@ -23,8 +23,8 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 2. Create your `.env` (copy and fill in):
    - `copy example.env .env`
 3. Run a collector:
-   - `python ecoflow_cells_csv.py`
-   - `python ecoflow_cells_csv_dualExtentionBattery.py`
+   - `python collector/ecoflow_cells_csv.py`
+   - `python collector/ecoflow_cells_csv_dualExtentionBattery.py`
 4. Visualize the CSV:
    - Open `gui/GUI.html` (or `gui/index.html`) in your browser and load the generated `.csv` file(s).
 

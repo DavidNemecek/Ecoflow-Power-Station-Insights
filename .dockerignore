@@ -12,3 +12,4 @@ output/
 *.log
 *.md
 gui/
+collector/__pycache__/
