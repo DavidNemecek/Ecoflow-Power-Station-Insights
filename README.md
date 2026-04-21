@@ -27,7 +27,7 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 1. Create your `.env` (copy and fill in):
    - `copy example.env .env`
 2. Run the collector:
-   - `docker compose pull && docker compose up -d`
+   - `docker compose up --build -d`
    - Optional: set `LOG_LEVEL=debug` (or `info`, `warning`, `error`) in your `.env`
    - Optional: set `MINUTES=60` in your `.env` (if omitted, it runs forever and logs a warning)
 3. Find the CSVs in `output/` and open them in the viewer:
