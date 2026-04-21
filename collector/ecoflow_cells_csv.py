@@ -204,6 +204,48 @@ def _append_wide_row(path: Path, *, timestamp_utc: str, cells_mv: list[int], exp
         writer.writerow([timestamp_utc, *cells_mv])
 
 
+def _rollover_path(base_path: Path, *, part: int) -> Path:
+    suffix = base_path.suffix if base_path.suffix else ".csv"
+    stem = base_path.stem if base_path.suffix else base_path.name
+    return base_path.with_name(f"{stem}_part{part:02d}{suffix}")
+
+
+class ResilientCsvWriter:
+    def __init__(self, base_path: Path, *, logger: logging.Logger, label: str) -> None:
+        self.base_path = base_path
+        self.path = base_path
+        self.part = 0
+        self.logger = logger
+        self.label = label
+
+    def append_row(self, *, timestamp_utc: str, cells_mv: list[int], expected_cell_count: int) -> None:
+        attempts = 0
+        while True:
+            try:
+                _ensure_wide_csv_header(self.path, cell_count=expected_cell_count)
+                _append_wide_row(
+                    self.path,
+                    timestamp_utc=timestamp_utc,
+                    cells_mv=cells_mv,
+                    expected_cell_count=expected_cell_count,
+                )
+                return
+            except OSError as e:
+                attempts += 1
+                if attempts > 20:
+                    raise
+                self.part += 1
+                new_path = _rollover_path(self.base_path, part=self.part)
+                self.logger.warning(
+                    "%s: failed to write to %s (%s). Switching to %s",
+                    self.label,
+                    self.path,
+                    e,
+                    new_path,
+                )
+                self.path = new_path
+
+
 def main() -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Log EcoFlow BMS cell voltages to CSV (wide rows, master + slave).")
@@ -246,6 +288,8 @@ def main() -> int:
     sample = 0
     master_cell_count: int | None = None
     slave_cell_count: int | None = None
+    master_writer = ResilientCsvWriter(master_path, logger=logger, label="master")
+    slave_writer = ResilientCsvWriter(slave_path, logger=logger, label=f"slave port {slave_port}")
     stop_at: float | None = None
     if minutes is not None:
         stop_at = time.monotonic() + (minutes * 60.0)
@@ -267,8 +311,11 @@ def main() -> int:
             master_cells, master_meta = extract_cell_voltages(payload, bms="master")
             if master_cell_count is None:
                 master_cell_count = len(master_cells)
-                _ensure_wide_csv_header(master_path, cell_count=master_cell_count)
-            _append_wide_row(master_path, timestamp_utc=ts, cells_mv=master_cells, expected_cell_count=master_cell_count)
+            master_writer.append_row(
+                timestamp_utc=ts,
+                cells_mv=master_cells,
+                expected_cell_count=master_cell_count,
+            )
 
             try:
                 slave_cells, slave_meta = extract_cell_voltages(payload, bms="slave", slave_port=slave_port)
@@ -281,13 +328,16 @@ def main() -> int:
                 continue
 
             if slave_present is not True:
-                logger.info("Slave BMS (port %s) detected; resuming logging to %s", slave_port, slave_path)
+                logger.info("Slave BMS (port %s) detected; resuming logging to %s", slave_port, slave_writer.path)
             slave_present = True
 
             if slave_cell_count is None:
                 slave_cell_count = len(slave_cells)
-                _ensure_wide_csv_header(slave_path, cell_count=slave_cell_count)
-            _append_wide_row(slave_path, timestamp_utc=ts, cells_mv=slave_cells, expected_cell_count=slave_cell_count)
+            slave_writer.append_row(
+                timestamp_utc=ts,
+                cells_mv=slave_cells,
+                expected_cell_count=slave_cell_count,
+            )
 
             time.sleep(max(args.interval, 0.1))
     except KeyboardInterrupt:

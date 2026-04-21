@@ -213,6 +213,48 @@ def _append_wide_row(path: Path, *, timestamp_utc: str, cells_mv: list[int], exp
         writer.writerow([timestamp_utc, *cells_mv])
 
 
+def _rollover_path(base_path: Path, *, part: int) -> Path:
+    suffix = base_path.suffix if base_path.suffix else ".csv"
+    stem = base_path.stem if base_path.suffix else base_path.name
+    return base_path.with_name(f"{stem}_part{part:02d}{suffix}")
+
+
+class ResilientCsvWriter:
+    def __init__(self, base_path: Path, *, logger: logging.Logger, label: str) -> None:
+        self.base_path = base_path
+        self.path = base_path
+        self.part = 0
+        self.logger = logger
+        self.label = label
+
+    def append_row(self, *, timestamp_utc: str, cells_mv: list[int], expected_cell_count: int) -> None:
+        attempts = 0
+        while True:
+            try:
+                _ensure_wide_csv_header(self.path, cell_count=expected_cell_count)
+                _append_wide_row(
+                    self.path,
+                    timestamp_utc=timestamp_utc,
+                    cells_mv=cells_mv,
+                    expected_cell_count=expected_cell_count,
+                )
+                return
+            except OSError as e:
+                attempts += 1
+                if attempts > 20:
+                    raise
+                self.part += 1
+                new_path = _rollover_path(self.base_path, part=self.part)
+                self.logger.warning(
+                    "%s: failed to write to %s (%s). Switching to %s",
+                    self.label,
+                    self.path,
+                    e,
+                    new_path,
+                )
+                self.path = new_path
+
+
 def _slave_output_path(slave_output: str | None, *, port: int, multi: bool) -> Path:
     if not slave_output:
         return Path(f"cell_voltages_slave_port{port}.csv")
@@ -297,7 +339,8 @@ def main() -> int:
     sample = 0
     master_cell_count: int | None = None
     slave_cell_counts: dict[int, int] = {}
-    slave_paths: dict[int, Path] = {}
+    master_writer = ResilientCsvWriter(master_path, logger=logger, label="master")
+    slave_writers: dict[int, ResilientCsvWriter] = {}
     slave_present: set[int] = set()
     stop_at: float | None = None
     if minutes is not None:
@@ -318,8 +361,11 @@ def main() -> int:
             master_cells, master_meta = extract_cell_voltages(payload, bms="master")
             if master_cell_count is None:
                 master_cell_count = len(master_cells)
-                _ensure_wide_csv_header(master_path, cell_count=master_cell_count)
-            _append_wide_row(master_path, timestamp_utc=ts, cells_mv=master_cells, expected_cell_count=master_cell_count)
+            master_writer.append_row(
+                timestamp_utc=ts,
+                cells_mv=master_cells,
+                expected_cell_count=master_cell_count,
+            )
 
             current_present: set[int] = set()
             multi = len(scan_ports) > 1
@@ -333,16 +379,19 @@ def main() -> int:
 
                 current_present.add(port)
 
-                if port not in slave_paths:
-                    slave_paths[port] = _slave_output_path(args.slave_output, port=port, multi=multi)
-                slave_path = slave_paths[port]
+                if port not in slave_writers:
+                    base_path = _slave_output_path(args.slave_output, port=port, multi=multi)
+                    slave_writers[port] = ResilientCsvWriter(
+                        base_path,
+                        logger=logger,
+                        label=f"slave port {port}",
+                    )
+                slave_writer = slave_writers[port]
 
                 if port not in slave_cell_counts:
                     slave_cell_counts[port] = len(slave_cells)
-                    _ensure_wide_csv_header(slave_path, cell_count=slave_cell_counts[port])
 
-                _append_wide_row(
-                    slave_path,
+                slave_writer.append_row(
                     timestamp_utc=ts,
                     cells_mv=slave_cells,
                     expected_cell_count=slave_cell_counts[port],
@@ -359,14 +408,17 @@ def main() -> int:
                 else:
                     port = default_slave_port
                     current_present.add(port)
-                    if port not in slave_paths:
-                        slave_paths[port] = _slave_output_path(args.slave_output, port=port, multi=False)
-                    slave_path = slave_paths[port]
+                    if port not in slave_writers:
+                        base_path = _slave_output_path(args.slave_output, port=port, multi=False)
+                        slave_writers[port] = ResilientCsvWriter(
+                            base_path,
+                            logger=logger,
+                            label=f"slave port {port}",
+                        )
+                    slave_writer = slave_writers[port]
                     if port not in slave_cell_counts:
                         slave_cell_counts[port] = len(slave_cells)
-                        _ensure_wide_csv_header(slave_path, cell_count=slave_cell_counts[port])
-                    _append_wide_row(
-                        slave_path,
+                    slave_writer.append_row(
                         timestamp_utc=ts,
                         cells_mv=slave_cells,
                         expected_cell_count=slave_cell_counts[port],
@@ -375,7 +427,8 @@ def main() -> int:
             newly_detected = current_present - slave_present
             newly_missing = slave_present - current_present
             for port in sorted(newly_detected):
-                logger.info("Detected slave battery on port %s; logging to %s", port, slave_paths[port])
+                path = slave_writers[port].path if port in slave_writers else None
+                logger.info("Detected slave battery on port %s; logging to %s", port, path)
             for port in sorted(newly_missing):
                 logger.info("Slave battery on port %s not detected; pausing logging", port)
             slave_present = current_present
