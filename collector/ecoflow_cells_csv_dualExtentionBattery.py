@@ -280,8 +280,19 @@ def main() -> int:
     else:
         scan_ports = list(range(1, max_slave_ports + 1))
 
-    if args.minutes is not None and args.minutes <= 0:
-        raise SystemExit("--minutes must be > 0 (or omit it to run forever)")
+    minutes = args.minutes
+    if minutes is None:
+        minutes_env = os.getenv("MINUTES", "").strip()
+        if minutes_env:
+            try:
+                minutes = float(minutes_env)
+            except ValueError as e:
+                raise SystemExit(f"Invalid MINUTES value: {minutes_env!r} (must be a number)") from e
+
+    if minutes is None:
+        logger.warning("No runtime limit set (neither --minutes nor MINUTES). Recording will run forever.")
+    elif minutes <= 0:
+        raise SystemExit("--minutes must be > 0 (or omit it / MINUTES to run forever)")
 
     sample = 0
     master_cell_count: int | None = None
@@ -289,8 +300,8 @@ def main() -> int:
     slave_paths: dict[int, Path] = {}
     slave_present: set[int] = set()
     stop_at: float | None = None
-    if args.minutes is not None:
-        stop_at = time.monotonic() + (args.minutes * 60.0)
+    if minutes is not None:
+        stop_at = time.monotonic() + (minutes * 60.0)
     try:
         while True:
             if stop_at is not None and time.monotonic() >= stop_at:
