@@ -1,6 +1,5 @@
 services:
   collector:
-    build: .
     image: ghcr.io/davidnemecek/ecoflow-power-station-insights:latest
     restart: unless-stopped
     env_file:

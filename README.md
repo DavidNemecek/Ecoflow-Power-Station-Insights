@@ -34,6 +34,9 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
    - <https://davidnemecek.github.io/Ecoflow-Power-Station-Insights/>
    - or `gui/GUI.html` locally
 
+Optional: build the image locally instead of pulling:
+- `docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d`
+
 ### Option 2: Run with Python
 
 1. Install dependencies:
