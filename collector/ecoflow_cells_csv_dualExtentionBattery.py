@@ -4,6 +4,7 @@ import csv
 import hashlib
 import hmac
 import json
+import logging
 import os
 import random
 import re
@@ -17,6 +18,24 @@ try:
 except ModuleNotFoundError:  # optional dependency
     def load_dotenv() -> bool:  # type: ignore[override]
         return False
+
+
+def setup_logging(level: str) -> logging.Logger:
+    level_norm = (level or "info").strip().lower()
+    levels = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+    }
+    if level_norm not in levels:
+        raise SystemExit("Invalid log level. Use one of: debug, info, warning, error")
+
+    logging.basicConfig(
+        level=levels[level_norm],
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    return logging.getLogger("ecoflow")
 
 
 def require_env(name: str, value: str | None) -> str:
@@ -212,7 +231,15 @@ def _slave_output_path(slave_output: str | None, *, port: int, multi: bool) -> P
 
 
 def main() -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Log EcoFlow BMS cell voltages to CSV (wide rows, master + slave).")
+    parser.add_argument(
+        "--log-level",
+        type=str.lower,
+        default=os.getenv("LOG_LEVEL", "info").lower(),
+        choices=["debug", "info", "warning", "error"],
+        help="Log level (default: env LOG_LEVEL or info)",
+    )
     parser.add_argument("--master-output", default="cell_voltages_master.csv", help="Master CSV path")
     parser.add_argument(
         "--slave-output",
@@ -238,6 +265,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    logger = setup_logging(args.log_level)
     access_key, secret_key, serial_number, base_url, api_path, default_slave_port, default_max_slave_port = load_config()
 
     url = f"{base_url}{api_path}"
@@ -336,9 +364,9 @@ def main() -> int:
             newly_detected = current_present - slave_present
             newly_missing = slave_present - current_present
             for port in sorted(newly_detected):
-                print(f"[{ts}] Detected slave battery on port {port}; logging to {slave_paths[port]}")
+                logger.info("Detected slave battery on port %s; logging to %s", port, slave_paths[port])
             for port in sorted(newly_missing):
-                print(f"[{ts}] Slave battery on port {port} not detected; pausing logging")
+                logger.info("Slave battery on port %s not detected; pausing logging", port)
             slave_present = current_present
 
             time.sleep(max(args.interval, 0.1))

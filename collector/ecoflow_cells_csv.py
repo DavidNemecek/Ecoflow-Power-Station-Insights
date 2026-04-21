@@ -4,6 +4,7 @@ import csv
 import hashlib
 import hmac
 import json
+import logging
 import os
 import random
 import re
@@ -13,6 +14,24 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+
+
+def setup_logging(level: str) -> logging.Logger:
+    level_norm = (level or "info").strip().lower()
+    levels = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+    }
+    if level_norm not in levels:
+        raise SystemExit("Invalid log level. Use one of: debug, info, warning, error")
+
+    logging.basicConfig(
+        level=levels[level_norm],
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    return logging.getLogger("ecoflow")
 
 
 def require_env(name: str, value: str | None) -> str:
@@ -186,7 +205,15 @@ def _append_wide_row(path: Path, *, timestamp_utc: str, cells_mv: list[int], exp
 
 
 def main() -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Log EcoFlow BMS cell voltages to CSV (wide rows, master + slave).")
+    parser.add_argument(
+        "--log-level",
+        type=str.lower,
+        default=os.getenv("LOG_LEVEL", "info").lower(),
+        choices=["debug", "info", "warning", "error"],
+        help="Log level (default: env LOG_LEVEL or info)",
+    )
     parser.add_argument("--master-output", default="cell_voltages_master.csv", help="Master CSV path")
     parser.add_argument("--slave-output", default=None, help="Slave CSV path (default: cell_voltages_slave_portN.csv)")
     parser.add_argument("--interval", type=float, default=10.0, help="Polling interval seconds (default: 10)")
@@ -194,6 +221,7 @@ def main() -> int:
     parser.add_argument("--slave-port", type=int, default=None, help="Slave BMS port (default: env SLAVE_BMS_PORT or 1)")
     args = parser.parse_args()
 
+    logger = setup_logging(args.log_level)
     access_key, secret_key, serial_number, base_url, api_path, default_slave_port = load_config()
     slave_port = args.slave_port if args.slave_port is not None else default_slave_port
 
@@ -210,6 +238,8 @@ def main() -> int:
     stop_at: float | None = None
     if args.minutes is not None:
         stop_at = time.monotonic() + (args.minutes * 60.0)
+
+    slave_present: bool | None = None
     try:
         while True:
             if stop_at is not None and time.monotonic() >= stop_at:
@@ -232,9 +262,16 @@ def main() -> int:
             try:
                 slave_cells, slave_meta = extract_cell_voltages(payload, bms="slave", slave_port=slave_port)
             except KeyError as e:
-                print(f"[{ts}] Slave BMS (port {slave_port}) not found: {e}")
+                if slave_present is not False:
+                    logger.info("Slave BMS (port %s) not detected; pausing logging", slave_port)
+                    logger.debug("Slave BMS missing detail: %s", e)
+                slave_present = False
                 time.sleep(max(args.interval, 0.1))
                 continue
+
+            if slave_present is not True:
+                logger.info("Slave BMS (port %s) detected; resuming logging to %s", slave_port, slave_path)
+            slave_present = True
 
             if slave_cell_count is None:
                 slave_cell_count = len(slave_cells)

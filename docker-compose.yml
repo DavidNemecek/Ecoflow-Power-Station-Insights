@@ -11,5 +11,6 @@ services:
       #   ECOFLOW_SCRIPT=ecoflow_cells_csv_dualExtentionBattery.py
       ECOFLOW_SCRIPT: ${ECOFLOW_SCRIPT:-ecoflow_cells_csv_dualExtentionBattery.py}
       ECOFLOW_ARGS: ${ECOFLOW_ARGS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - ./output:/data
