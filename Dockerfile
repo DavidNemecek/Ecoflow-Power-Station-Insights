@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ECOFLOW_ARGS=""
 
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN python -m pip install --no-cache-dir -r /app/requirements.txt
 
 COPY collector /app/collector
 COPY docker/entrypoint.sh /entrypoint.sh
