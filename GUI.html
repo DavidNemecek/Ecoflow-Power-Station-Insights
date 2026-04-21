@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cell Voltages Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --panel-2: #182235;
+      --text: #edf2f7;
+      --muted: #a0aec0;
+      --border: #2d3748;
+      --accent: #63b3ed;
+      --danger: #fc8181;
+      --ok: #68d391;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    h2 {
+      margin: 0 0 10px 0;
+      font-size: 20px;
+    }
+    .sub {
+      color: var(--muted);
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 220px;
+    }
+    .control-group label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    button, .file-label, input[type="datetime-local"] {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+    }
+    button, .file-label {
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 42px;
+    }
+    button:hover, .file-label:hover, input[type="datetime-local"]:hover, input[type="datetime-local"]:focus {
+      border-color: var(--accent);
+      outline: none;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 8px;
+      min-height: 1.4em;
+    }
+    .status.error { color: var(--danger); }
+    .status.ok { color: var(--ok); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .stat {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .stat .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .stat .value {
+      font-size: 22px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .chart-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    #chart {
+      width: 100%;
+      height: 760px;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .small-note {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: right;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    th:first-child, td:first-child {
+      text-align: left;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+      z-index: 1;
+    }
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Cell voltage viewer</h1>
+    <div class="sub">
+      Upload a CSV with a <strong>timestamp_utc</strong> column and one or more <strong>cell_XX_mv</strong> columns.
+      Default view shows <strong>everything</strong>. You can optionally apply a <strong>Europe/Vienna</strong> timeframe after loading the file.
+      <span class="pill">client-side upload</span>
+    </div>
+
+    <div class="card">
+      <div class="controls">
+        <label for="csvFile" class="file-label">Choose CSV file</label>
+        <input id="csvFile" type="file" accept=".csv,text/csv">
+        <div class="control-group">
+          <label for="startTime">Start (Europe/Vienna)</label>
+          <input id="startTime" type="datetime-local" step="1" disabled>
+        </div>
+        <div class="control-group">
+          <label for="endTime">End (Europe/Vienna)</label>
+          <input id="endTime" type="datetime-local" step="1" disabled>
+        </div>
+        <button id="applyFilter" disabled>Apply timeframe</button>
+        <button id="showEverything" disabled>Show everything</button>
+      </div>
+      <div id="datasetRange" class="small-note">No file loaded yet.</div>
+      <div id="status" class="status">No file loaded yet.</div>
+    </div>
+
+    <div class="card">
+      <div class="stats">
+        <div class="stat">
+          <div class="label">Rows shown</div>
+          <div class="value" id="rowsValue">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">First timestamp</div>
+          <div class="value" id="firstValue" style="font-size:16px;">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Last timestamp</div>
+          <div class="value" id="lastValue" style="font-size:16px;">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Series count</div>
+          <div class="value" id="seriesValue">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chart-controls">
+        <button id="showAll" disabled>Show all series</button>
+        <button id="hideAll" disabled>Hide all series</button>
+        <button id="resetZoom" disabled>Reset zoom</button>
+        <button id="downloadPng" disabled>Download plot as PNG</button>
+      </div>
+      <div id="chart"></div>
+      <div class="note">
+        Use the mouse to drag-zoom. Double-click inside the plot to reset. Click legend items to hide or show individual series.
+      </div>
+
+    </div>
+
+    <div class="card">
+      <h2>Series summary</h2>
+      <div id="summaryWrap" class="note">Upload a CSV file to populate the table.</div>
+
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('csvFile');
+    const startTimeInput = document.getElementById('startTime');
+    const endTimeInput = document.getElementById('endTime');
+    const applyFilterBtn = document.getElementById('applyFilter');
+    const showEverythingBtn = document.getElementById('showEverything');
+
+    const datasetRangeEl = document.getElementById('datasetRange');
+    const statusEl = document.getElementById('status');
+    const showAllBtn = document.getElementById('showAll');
+    const hideAllBtn = document.getElementById('hideAll');
+    const resetZoomBtn = document.getElementById('resetZoom');
+    const downloadPngBtn = document.getElementById('downloadPng');
+
+    const rowsValue = document.getElementById('rowsValue');
+    const firstValue = document.getElementById('firstValue');
+    const lastValue = document.getElementById('lastValue');
+    const seriesValue = document.getElementById('seriesValue');
+    const summaryWrap = document.getElementById('summaryWrap');
+
+    let chartLoaded = false;
+    let currentDataset = null;
+
+    function setStatus(message, mode = '') {
+      statusEl.textContent = message;
+      statusEl.className = 'status' + (mode ? ' ' + mode : '');
+    }
+
+    function setFilterControlsEnabled(enabled) {
+      startTimeInput.disabled = !enabled;
+      endTimeInput.disabled = !enabled;
+      applyFilterBtn.disabled = !enabled;
+      showEverythingBtn.disabled = !enabled;
+    }
+
+    function setChartButtonsEnabled(enabled) {
+      showAllBtn.disabled = !enabled;
+      hideAllBtn.disabled = !enabled;
+      resetZoomBtn.disabled = !enabled;
+      downloadPngBtn.disabled = !enabled;
+    }
+
+    function resetSummaryUi() {
+      rowsValue.textContent = '—';
+      firstValue.textContent = '—';
+      lastValue.textContent = '—';
+      seriesValue.textContent = '—';
+      summaryWrap.innerHTML = '<div class="note">Upload a CSV file to populate the table.</div>';
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function parseCsvLine(line) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const next = line[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && next === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+
+      result.push(current);
+      return result;
+    }
+
+    function parseCsv(text) {
+      const lines = text
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .filter(line => line.trim() !== '');
+
+      if (lines.length < 2) {
+        throw new Error('The CSV file appears to be empty or only contains a header.');
+      }
+
+      const headers = parseCsvLine(lines[0]).map(h => h.trim());
+      const rows = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCsvLine(lines[i]);
+        const row = {};
+        for (let j = 0; j < headers.length; j++) {
+          row[headers[j]] = (values[j] ?? '').trim();
+        }
+        rows.push(row);
+      }
+
+      return { headers, rows };
+    }
+
+    function getViennaParts(date) {
+      const dtf = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Vienna',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3,
+        hourCycle: 'h23'
+      });
+
+      const parts = Object.fromEntries(dtf.formatToParts(date).map(p => [p.type, p.value]));
+      return {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hour: parts.hour,
+        minute: parts.minute,
+        second: parts.second,
+        fractionalSecond: parts.fractionalSecond
+      };
+    }
+
+    function buildViennaStrings(date) {
+      const p = getViennaParts(date);
+      const localKey = `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.${p.fractionalSecond}`;
+      const localLabel = `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}.${p.fractionalSecond} Europe/Vienna`;
+      const inputValue = `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+      const dateLabel = `${p.year}-${p.month}-${p.day}`;
+      return { localKey, localLabel, inputValue, dateLabel };
+    }
+
+    function toNumber(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function normalizeStartValue(value) {
+      if (!value) return null;
+      if (value.length === 16) return value + ':00.000';
+      if (value.length === 19) return value + '.000';
+      if (value.length === 23) return value;
+      return value;
+    }
+
+    function normalizeEndValue(value) {
+      if (!value) return null;
+      if (value.length === 16) return value + ':59.999';
+      if (value.length === 19) return value + '.999';
+      if (value.length === 23) return value;
+      return value;
+    }
+
+    function computeSeriesStats(values) {
+      const nums = values.filter(v => v !== null && Number.isFinite(v));
+      if (!nums.length) {
+        return { min: null, max: null, delta: null, mean: null };
+      }
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+      return { min, max, delta: max - min, mean };
+    }
+
+    function buildSummaryTable(summaryRows) {
+      if (!summaryRows.length) {
+        summaryWrap.innerHTML = '<div class="note">No series available.</div>';
+        return;
+      }
+
+      const rowsHtml = summaryRows.map(r => `
+        <tr>
+          <td>${escapeHtml(r.name)}</td>
+          <td>${r.min === null ? '—' : r.min.toFixed(1)}</td>
+          <td>${r.max === null ? '—' : r.max.toFixed(1)}</td>
+          <td>${r.delta === null ? '—' : r.delta.toFixed(1)}</td>
+          <td>${r.mean === null ? '—' : r.mean.toFixed(1)}</td>
+        </tr>
+      `).join('');
+
+      summaryWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Series</th>
+              <th>Min (mV)</th>
+              <th>Max (mV)</th>
+              <th>Delta (mV)</th>
+              <th>Mean (mV)</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      `;
+    }
+
+
+
+    function clearChart() {
+      try {
+        Plotly.purge('chart');
+      } catch (e) {}
+      const chartEl = document.getElementById('chart');
+      chartEl.innerHTML = '';
+    }
+
+    function prepareDataset(text, fileName) {
+      const { headers, rows } = parseCsv(text);
+
+      if (!headers.includes('timestamp_utc')) {
+        throw new Error('The CSV must contain a timestamp_utc column.');
+      }
+
+      const realCellCols = headers.filter(h => /^cell_\d+_mv$/i.test(h));
+      if (!realCellCols.length) {
+        throw new Error('The CSV must contain at least one cell_XX_mv column.');
+      }
+
+      const preparedRows = [];
+
+      for (const row of rows) {
+        const date = new Date(row.timestamp_utc);
+        if (Number.isNaN(date.getTime())) continue;
+
+        const vienna = buildViennaStrings(date);
+        const values = {};
+        for (const col of realCellCols) {
+          values[col] = toNumber(row[col]);
+        }
+
+        preparedRows.push({
+          timestampMs: date.getTime(),
+          localKey: vienna.localKey,
+          localLabel: vienna.localLabel,
+          inputValue: vienna.inputValue,
+          dateLabel: vienna.dateLabel,
+          values
+        });
+      }
+
+      preparedRows.sort((a, b) => a.timestampMs - b.timestampMs);
+
+      if (!preparedRows.length) {
+        throw new Error('No valid timestamp rows were found in the CSV.');
+      }
+
+      return {
+        fileName,
+        realCellCols,
+        rows: preparedRows,
+        minInputValue: preparedRows[0].inputValue,
+        maxInputValue: preparedRows[preparedRows.length - 1].inputValue,
+        minLabel: preparedRows[0].localLabel,
+        maxLabel: preparedRows[preparedRows.length - 1].localLabel
+      };
+    }
+
+    async function renderFilteredDataset(startValue = '', endValue = '') {
+      if (!currentDataset) return;
+
+      const startBound = normalizeStartValue(startValue);
+      const endBound = normalizeEndValue(endValue);
+
+      if (startBound && endBound && startBound > endBound) {
+        throw new Error('The start of the timeframe must be before the end.');
+      }
+
+      const filtered = currentDataset.rows.filter(row => {
+        if (startBound && row.localKey < startBound) return false;
+        if (endBound && row.localKey > endBound) return false;
+        return true;
+      });
+
+      if (!filtered.length) {
+        throw new Error('No rows were found in the selected timeframe.');
+      }
+
+      const realSeriesDefs = currentDataset.realCellCols.map(col => ({
+        key: col,
+        label: col.replace('_mv', '').replaceAll('_', ' ').toUpperCase()
+      }));
+
+      const seriesData = {};
+      for (const def of realSeriesDefs) {
+        seriesData[def.key] = [];
+      }
+
+      const avgVoltageSeries = [];
+      const cellDeltaSeries = [];
+
+      for (const row of filtered) {
+        const realValues = currentDataset.realCellCols
+          .map(col => row.values[col])
+          .filter(v => v !== null && Number.isFinite(v));
+
+        const avgVoltage = realValues.length
+          ? realValues.reduce((a, b) => a + b, 0) / realValues.length
+          : null;
+
+        const cellDelta = realValues.length
+          ? Math.max(...realValues) - Math.min(...realValues)
+          : null;
+
+        for (const col of currentDataset.realCellCols) {
+          seriesData[col].push(row.values[col]);
+        }
+
+        avgVoltageSeries.push(avgVoltage);
+        cellDeltaSeries.push(cellDelta);
+      }
+
+      const xValues = filtered.map(r => r.localKey);
+
+      const traces = realSeriesDefs.map((def) => ({
+        x: xValues,
+        y: seriesData[def.key],
+        type: 'scattergl',
+        mode: 'lines',
+        name: def.label,
+        line: {
+          width: 1.8
+        },
+        hovertemplate: def.label + ': %{y:.0f} mV<extra></extra>',
+        connectgaps: false
+      }));
+
+      traces.push({
+        x: xValues,
+        y: avgVoltageSeries,
+        yaxis: 'y2',
+        type: 'scattergl',
+        mode: 'lines',
+        name: 'AVG VOLTAGE',
+        showlegend: false,
+        opacity: 0,
+        line: { width: 0 },
+        hovertemplate: 'AVG VOLTAGE: %{y:.0f} mV<extra></extra>',
+        connectgaps: false
+      });
+
+      traces.push({
+        x: xValues,
+        y: cellDeltaSeries,
+        yaxis: 'y2',
+        type: 'scattergl',
+        mode: 'lines',
+        name: 'CELL DELTA',
+        showlegend: false,
+        opacity: 0,
+        line: { width: 0 },
+        hovertemplate: 'CELL DELTA: %{y:.0f} mV<extra></extra>',
+        connectgaps: false
+      });
+
+      const layout = {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#edf2f7' },
+        hovermode: 'x unified',
+        margin: { l: 70, r: 30, t: 20, b: 70 },
+        legend: {
+          orientation: 'h',
+          yanchor: 'bottom',
+          y: 1.02,
+          xanchor: 'left',
+          x: 0
+        },
+        hoverlabel: {
+          bgcolor: '#ffffff',
+          bordercolor: '#cbd5e0',
+          font: { color: '#000000' }
+        },
+        xaxis: {
+          title: 'Local time (Europe/Vienna)',
+          showgrid: true,
+          gridcolor: '#2d3748',
+          zeroline: false,
+          rangeslider: { visible: true }
+        },
+        yaxis: {
+          title: 'Voltage (mV)',
+          showgrid: true,
+          gridcolor: '#2d3748',
+          zeroline: false
+        },
+        yaxis2: {
+          overlaying: 'y',
+          visible: false,
+          showgrid: false,
+          zeroline: false
+        }
+      };
+
+      const config = {
+        responsive: true,
+        displaylogo: false,
+        scrollZoom: true,
+        toImageButtonOptions: {
+          format: 'png',
+          filename: 'cell_voltage_plot',
+          height: 900,
+          width: 1600,
+          scale: 2
+        }
+      };
+
+      await Plotly.newPlot('chart', traces, layout, config);
+      chartLoaded = true;
+      setChartButtonsEnabled(true);
+
+      rowsValue.textContent = String(filtered.length);
+      firstValue.textContent = filtered[0].localLabel;
+      lastValue.textContent = filtered[filtered.length - 1].localLabel;
+      seriesValue.textContent = String(realSeriesDefs.length);
+
+      const summaryRows = realSeriesDefs.map(def => {
+        const stats = computeSeriesStats(seriesData[def.key]);
+        return {
+          name: def.label,
+          ...stats
+        };
+      });
+
+      buildSummaryTable(summaryRows);
+
+      const filterText = (startValue || endValue)
+        ? `Showing ${filtered.length} rows in selected timeframe.`
+        : `Showing all ${filtered.length} rows from the uploaded file.`;
+
+      setStatus(`Loaded ${currentDataset.fileName}. ${filterText}`, 'ok');
+    }
+
+    fileInput.addEventListener('change', async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      clearChart();
+      chartLoaded = false;
+      setChartButtonsEnabled(false);
+      setFilterControlsEnabled(false);
+      resetSummaryUi();
+      datasetRangeEl.textContent = `Loading ${file.name}...`;
+      setStatus(`Loading ${file.name}...`);
+
+      try {
+        const text = await file.text();
+        currentDataset = prepareDataset(text, file.name);
+
+        startTimeInput.value = '';
+        endTimeInput.value = '';
+        startTimeInput.min = currentDataset.minInputValue;
+        startTimeInput.max = currentDataset.maxInputValue;
+        endTimeInput.min = currentDataset.minInputValue;
+        endTimeInput.max = currentDataset.maxInputValue;
+        startTimeInput.placeholder = currentDataset.minInputValue;
+        endTimeInput.placeholder = currentDataset.maxInputValue;
+
+        datasetRangeEl.innerHTML = `
+          Dataset range in Europe/Vienna: <strong>${escapeHtml(currentDataset.minLabel)}</strong> → <strong>${escapeHtml(currentDataset.maxLabel)}</strong><br>
+          Leave the timeframe fields empty to show everything.
+        `;
+
+        setFilterControlsEnabled(true);
+        await renderFilteredDataset('', '');
+      } catch (err) {
+        console.error(err);
+        currentDataset = null;
+        clearChart();
+        chartLoaded = false;
+        setFilterControlsEnabled(false);
+        setChartButtonsEnabled(false);
+        resetSummaryUi();
+        datasetRangeEl.textContent = 'No file loaded yet.';
+        setStatus(err?.message || 'Failed to load the CSV file.', 'error');
+      }
+    });
+
+    applyFilterBtn.addEventListener('click', async () => {
+      if (!currentDataset) return;
+      try {
+        await renderFilteredDataset(startTimeInput.value, endTimeInput.value);
+      } catch (err) {
+        console.error(err);
+        setStatus(err?.message || 'Failed to apply the timeframe.', 'error');
+      }
+    });
+
+    showEverythingBtn.addEventListener('click', async () => {
+      if (!currentDataset) return;
+      startTimeInput.value = '';
+      endTimeInput.value = '';
+      try {
+        await renderFilteredDataset('', '');
+      } catch (err) {
+        console.error(err);
+        setStatus(err?.message || 'Failed to reset the timeframe.', 'error');
+      }
+    });
+
+    showAllBtn.addEventListener('click', () => {
+      if (!chartLoaded) return;
+      Plotly.restyle('chart', 'visible', true);
+    });
+
+    hideAllBtn.addEventListener('click', () => {
+      if (!chartLoaded) return;
+      Plotly.restyle('chart', 'visible', 'legendonly');
+    });
+
+    resetZoomBtn.addEventListener('click', () => {
+      if (!chartLoaded) return;
+      Plotly.relayout('chart', {
+        'xaxis.autorange': true,
+        'yaxis.autorange': true
+      });
+    });
+
+    downloadPngBtn.addEventListener('click', async () => {
+      if (!chartLoaded) return;
+      try {
+        const fileStem = currentDataset?.fileName
+          ? currentDataset.fileName.replace(/\.[^.]+$/, '')
+          : 'cell_voltage_plot';
+
+        const url = await Plotly.toImage('chart', {
+          format: 'png',
+          width: 1600,
+          height: 900,
+          scale: 2
+        });
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileStem}.png`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        setStatus(`PNG exported as ${fileStem}.png`, 'ok');
+      } catch (err) {
+        console.error(err);
+        setStatus('PNG export failed in this browser. Try Chrome/Edge or reopen the file from disk and retry.', 'error');
+      }
+    });
+  </script>
+</body>
+</html>
