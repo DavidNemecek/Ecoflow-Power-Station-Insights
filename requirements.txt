@@ -1,2 +1,2 @@
-requests>=2.32,<3
+requests>=2.34.0,<3
 python-dotenv>=1.2.2,<2
