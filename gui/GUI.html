@@ -270,6 +270,8 @@
 
     let chartLoaded = false;
     let currentDataset = null;
+    let currentRender = null;
+    let aggregateUpdateInProgress = false;
 
     function setStatus(message, mode = '') {
       statusEl.textContent = message;
@@ -427,6 +429,61 @@
       return { min, max, delta: max - min, mean };
     }
 
+    function isTraceVisible(trace) {
+      return trace && trace.visible !== false && trace.visible !== 'legendonly';
+    }
+
+    function computeAggregateSeries(rows, visibleCellCols) {
+      const avgVoltageSeries = [];
+      const cellDeltaSeries = [];
+
+      for (const row of rows) {
+        const values = visibleCellCols
+          .map(col => row.values[col])
+          .filter(v => v !== null && Number.isFinite(v));
+
+        const avgVoltage = values.length
+          ? values.reduce((a, b) => a + b, 0) / values.length
+          : null;
+
+        const cellDelta = values.length
+          ? Math.max(...values) - Math.min(...values)
+          : null;
+
+        avgVoltageSeries.push(avgVoltage);
+        cellDeltaSeries.push(cellDelta);
+      }
+
+      return { avgVoltageSeries, cellDeltaSeries };
+    }
+
+    function getVisibleCellColumns() {
+      if (!currentRender) return [];
+      const chartEl = document.getElementById('chart');
+
+      return currentRender.realSeriesDefs
+        .filter((def, index) => isTraceVisible(chartEl.data?.[index]))
+        .map(def => def.key);
+    }
+
+    async function updateAggregateTraces() {
+      if (!chartLoaded || !currentRender || aggregateUpdateInProgress) return;
+
+      const chartEl = document.getElementById('chart');
+      const visibleCellCols = getVisibleCellColumns();
+      const { avgVoltageSeries, cellDeltaSeries } = computeAggregateSeries(currentRender.rows, visibleCellCols);
+
+      aggregateUpdateInProgress = true;
+      try {
+        await Plotly.restyle(chartEl, {
+          y: [avgVoltageSeries, cellDeltaSeries],
+          visible: [true, true]
+        }, [currentRender.avgTraceIndex, currentRender.deltaTraceIndex]);
+      } finally {
+        aggregateUpdateInProgress = false;
+      }
+    }
+
     function buildSummaryTable(summaryRows) {
       if (!summaryRows.length) {
         summaryWrap.innerHTML = '<div class="note">No series available.</div>';
@@ -465,6 +522,8 @@
       try {
         Plotly.purge('chart');
       } catch (e) {}
+      currentRender = null;
+      aggregateUpdateInProgress = false;
       const chartEl = document.getElementById('chart');
       chartEl.innerHTML = '';
     }
@@ -550,31 +609,14 @@
         seriesData[def.key] = [];
       }
 
-      const avgVoltageSeries = [];
-      const cellDeltaSeries = [];
-
       for (const row of filtered) {
-        const realValues = currentDataset.realCellCols
-          .map(col => row.values[col])
-          .filter(v => v !== null && Number.isFinite(v));
-
-        const avgVoltage = realValues.length
-          ? realValues.reduce((a, b) => a + b, 0) / realValues.length
-          : null;
-
-        const cellDelta = realValues.length
-          ? Math.max(...realValues) - Math.min(...realValues)
-          : null;
-
         for (const col of currentDataset.realCellCols) {
           seriesData[col].push(row.values[col]);
         }
-
-        avgVoltageSeries.push(avgVoltage);
-        cellDeltaSeries.push(cellDelta);
       }
 
       const xValues = filtered.map(r => r.localKey);
+      const { avgVoltageSeries, cellDeltaSeries } = computeAggregateSeries(filtered, currentDataset.realCellCols);
 
       const traces = realSeriesDefs.map((def) => ({
         x: xValues,
@@ -669,8 +711,18 @@
         }
       };
 
-      await Plotly.newPlot('chart', traces, layout, config);
+      const chartEl = document.getElementById('chart');
+      chartEl.removeListener?.('plotly_restyle', updateAggregateTraces);
+
+      await Plotly.newPlot(chartEl, traces, layout, config);
       chartLoaded = true;
+      currentRender = {
+        rows: filtered,
+        realSeriesDefs,
+        avgTraceIndex: realSeriesDefs.length,
+        deltaTraceIndex: realSeriesDefs.length + 1
+      };
+      chartEl.on('plotly_restyle', updateAggregateTraces);
       setChartButtonsEnabled(true);
 
       rowsValue.textContent = String(filtered.length);
@@ -764,12 +816,14 @@
 
     showAllBtn.addEventListener('click', () => {
       if (!chartLoaded) return;
-      Plotly.restyle('chart', 'visible', true);
+      const cellTraceIndexes = currentRender.realSeriesDefs.map((_, index) => index);
+      Plotly.restyle('chart', 'visible', true, cellTraceIndexes);
     });
 
     hideAllBtn.addEventListener('click', () => {
       if (!chartLoaded) return;
-      Plotly.restyle('chart', 'visible', 'legendonly');
+      const cellTraceIndexes = currentRender.realSeriesDefs.map((_, index) => index);
+      Plotly.restyle('chart', 'visible', 'legendonly', cellTraceIndexes);
     });
 
     resetZoomBtn.addEventListener('click', () => {
