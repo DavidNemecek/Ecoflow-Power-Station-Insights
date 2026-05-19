@@ -321,14 +321,14 @@ def main() -> int:
                 slave_cells, slave_meta = extract_cell_voltages(payload, bms="slave", slave_port=slave_port)
             except KeyError as e:
                 if slave_present is not False:
-                    logger.info("Slave BMS (port %s) not detected; pausing logging", slave_port)
+                    logger.info("Slave BMS not detected; pausing logging")
                     logger.debug("Slave BMS missing detail: %s", e)
                 slave_present = False
                 time.sleep(max(args.interval, 0.1))
                 continue
 
             if slave_present is not True:
-                logger.info("Slave BMS (port %s) detected; resuming logging to %s", slave_port, slave_writer.path)
+                logger.info("Slave BMS detected; resuming logging")
             slave_present = True
 
             if slave_cell_count is None:
