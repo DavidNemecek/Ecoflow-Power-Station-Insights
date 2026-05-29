@@ -130,6 +130,115 @@ def _normalize_cell_voltages(cell_voltages: object) -> list[int]:
     return [int(v) for v in cell_voltages]
 
 
+
+
+METRIC_HEADERS = ["current_a", "voltage_v", "power_w", "charged_kwh", "discharged_kwh"]
+
+
+def _to_float(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_by_names(container: object, names: list[str]) -> object | None:
+    if not isinstance(container, dict):
+        return None
+
+    lowered = {str(k).lower(): v for k, v in container.items()}
+    for name in names:
+        if name in container:
+            return container[name]
+        value = lowered.get(name.lower())
+        if value is not None:
+            return value
+    return None
+
+
+def _normalize_voltage(value: object) -> float | None:
+    raw = _to_float(value)
+    if raw is None:
+        return None
+    # EcoFlow BMS fields are commonly reported as mV. Some payloads already use V.
+    if abs(raw) > 1000:
+        return raw / 1000.0
+    return raw
+
+
+def _normalize_current(value: object) -> float | None:
+    raw = _to_float(value)
+    if raw is None:
+        return None
+    # EcoFlow BMS fields are commonly reported as mA. Some payloads already use A.
+    if abs(raw) > 100:
+        return raw / 1000.0
+    return raw
+
+
+def _value_from_base_names(data: object, base: list[object], names: list[str]) -> object | None:
+    bms_data = _get_by_path(data, base)
+    nested = _first_by_names(bms_data, names)
+    if nested is not None:
+        return nested
+
+    # Some EcoFlow responses flatten fields as e.g. "bmsMaster.amp".
+    for name in names:
+        value = _get_by_path(data, base + [name])
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_metrics_from_base(data: object, base: list[object]) -> dict[str, float | None]:
+    voltage = _normalize_voltage(_value_from_base_names(data, base, [
+        "vol", "volt", "voltage", "packVol", "packVolt", "bmsVol", "batteryVol", "batVol",
+    ]))
+    current = _normalize_current(_value_from_base_names(data, base, [
+        "amp", "amps", "current", "packAmp", "bmsAmp", "batteryCurrent", "batCurrent",
+    ]))
+
+    power = None
+    if voltage is not None and current is not None:
+        power = voltage * current
+
+    return {
+        "current_a": current,
+        "voltage_v": voltage,
+        "power_w": power,
+    }
+
+
+class EnergyIntegrator:
+    def __init__(self) -> None:
+        self.last_timestamp: float | None = None
+        self.charged_kwh = 0.0
+        self.discharged_kwh = 0.0
+
+    def update(self, *, timestamp: float, power_w: float | None) -> dict[str, float | None]:
+        if self.last_timestamp is not None and power_w is not None:
+            elapsed_hours = max(0.0, timestamp - self.last_timestamp) / 3600.0
+            energy_kwh = power_w * elapsed_hours / 1000.0
+            if energy_kwh >= 0:
+                self.charged_kwh += energy_kwh
+            else:
+                self.discharged_kwh += abs(energy_kwh)
+
+        self.last_timestamp = timestamp
+        return {
+            "charged_kwh": self.charged_kwh,
+            "discharged_kwh": self.discharged_kwh,
+        }
+
+
+def _format_metric(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.6f}"
+
+
 def _candidate_slave_base_paths(port: int) -> list[list[object]]:
     return [
         ["bmsSlave", str(port)],
@@ -162,10 +271,13 @@ def extract_cell_voltages(payload: dict, *, bms: str = "master", slave_port: int
         min_cell = _get_by_path(data, base + ["minCellVol"])
         max_cell = _get_by_path(data, base + ["maxCellVol"])
 
+        metrics = _extract_metrics_from_base(data, base)
+
         meta = {
             "series_num": series_num,
             "min_cell_mv": min_cell,
             "max_cell_mv": max_cell,
+            **metrics,
             "bms": bms,
             "slave_port": slave_port if bms == "slave" else None,
         }
@@ -193,15 +305,15 @@ def _ensure_wide_csv_header(path: Path, *, cell_count: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["timestamp_utc", *_cell_headers_mv(cell_count)])
+        writer.writerow(["timestamp_utc", *_cell_headers_mv(cell_count), *METRIC_HEADERS])
 
 
-def _append_wide_row(path: Path, *, timestamp_utc: str, cells_mv: list[int], expected_cell_count: int) -> None:
+def _append_wide_row(path: Path, *, timestamp_utc: str, cells_mv: list[int], expected_cell_count: int, metrics: dict[str, float | None] | None = None) -> None:
     if len(cells_mv) != expected_cell_count:
         raise ValueError(f"{path}: expected {expected_cell_count} cells, got {len(cells_mv)}")
     with path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([timestamp_utc, *cells_mv])
+        writer.writerow([timestamp_utc, *cells_mv, *[_format_metric((metrics or {}).get(name)) for name in METRIC_HEADERS]])
 
 
 def _rollover_path(base_path: Path, *, part: int) -> Path:
@@ -218,7 +330,7 @@ class ResilientCsvWriter:
         self.logger = logger
         self.label = label
 
-    def append_row(self, *, timestamp_utc: str, cells_mv: list[int], expected_cell_count: int) -> None:
+    def append_row(self, *, timestamp_utc: str, cells_mv: list[int], expected_cell_count: int, metrics: dict[str, float | None] | None = None) -> None:
         attempts = 0
         while True:
             try:
@@ -228,6 +340,7 @@ class ResilientCsvWriter:
                     timestamp_utc=timestamp_utc,
                     cells_mv=cells_mv,
                     expected_cell_count=expected_cell_count,
+                    metrics=metrics,
                 )
                 return
             except OSError as e:
@@ -290,6 +403,8 @@ def main() -> int:
     slave_cell_count: int | None = None
     master_writer = ResilientCsvWriter(master_path, logger=logger, label="master")
     slave_writer = ResilientCsvWriter(slave_path, logger=logger, label=f"slave port {slave_port}")
+    master_integrator = EnergyIntegrator()
+    slave_integrator = EnergyIntegrator()
     stop_at: float | None = None
     if minutes is not None:
         stop_at = time.monotonic() + (minutes * 60.0)
@@ -306,19 +421,29 @@ def main() -> int:
             if str(payload.get("code")) not in ("0", "200", "None", "null") and payload.get("data") is None:
                 raise RuntimeError(f"Unexpected API response: {json.dumps(payload, ensure_ascii=False)}")
 
-            ts = datetime.now(timezone.utc).isoformat()
+            sample_time = time.time()
+            ts = datetime.fromtimestamp(sample_time, timezone.utc).isoformat()
 
             master_cells, master_meta = extract_cell_voltages(payload, bms="master")
+            master_metrics = {
+                **master_meta,
+                **master_integrator.update(timestamp=sample_time, power_w=master_meta.get("power_w")),
+            }
             if master_cell_count is None:
                 master_cell_count = len(master_cells)
             master_writer.append_row(
                 timestamp_utc=ts,
                 cells_mv=master_cells,
                 expected_cell_count=master_cell_count,
+                metrics=master_metrics,
             )
 
             try:
                 slave_cells, slave_meta = extract_cell_voltages(payload, bms="slave", slave_port=slave_port)
+                slave_metrics = {
+                    **slave_meta,
+                    **slave_integrator.update(timestamp=sample_time, power_w=slave_meta.get("power_w")),
+                }
             except KeyError as e:
                 if slave_present is not False:
                     logger.info("Slave BMS not detected; pausing logging")
@@ -337,6 +462,7 @@ def main() -> int:
                 timestamp_utc=ts,
                 cells_mv=slave_cells,
                 expected_cell_count=slave_cell_count,
+                metrics=slave_metrics,
             )
 
             time.sleep(max(args.interval, 0.1))

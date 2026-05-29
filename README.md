@@ -33,6 +33,7 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 3. Find the CSVs in `output/` and open them in the viewer:
    - <https://davidnemecek.github.io/Ecoflow-Power-Station-Insights/>
    - or `gui/GUI.html` locally
+   - New CSVs include optional metric columns (`current_a`, `voltage_v`, `power_w`, `charged_kwh`, `discharged_kwh`) when the EcoFlow API exposes BMS current and voltage fields. The viewer shows charged/discharged kWh and average current for both the displayed timeframe and the full uploaded file.
 
 Optional: build the image locally instead of pulling:
 - `docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d`

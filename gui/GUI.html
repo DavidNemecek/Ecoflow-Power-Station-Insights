@@ -224,6 +224,18 @@
           <div class="label">Series count</div>
           <div class="value" id="seriesValue">—</div>
         </div>
+        <div class="stat">
+          <div class="label">Charged kWh</div>
+          <div class="value" id="chargedValue">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Discharged kWh</div>
+          <div class="value" id="dischargedValue">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Current</div>
+          <div class="value" id="currentValue">—</div>
+        </div>
       </div>
     </div>
 
@@ -266,6 +278,9 @@
     const firstValue = document.getElementById('firstValue');
     const lastValue = document.getElementById('lastValue');
     const seriesValue = document.getElementById('seriesValue');
+    const chargedValue = document.getElementById('chargedValue');
+    const dischargedValue = document.getElementById('dischargedValue');
+    const currentValue = document.getElementById('currentValue');
     const summaryWrap = document.getElementById('summaryWrap');
 
     let chartLoaded = false;
@@ -297,6 +312,9 @@
       firstValue.textContent = '—';
       lastValue.textContent = '—';
       seriesValue.textContent = '—';
+      chargedValue.textContent = '—';
+      dischargedValue.textContent = '—';
+      currentValue.textContent = '—';
       summaryWrap.innerHTML = '<div class="note">Upload a CSV file to populate the table.</div>';
     }
 
@@ -429,6 +447,71 @@
       return { min, max, delta: max - min, mean };
     }
 
+    function hasMetric(rows, key) {
+      return rows.some(row => row.metrics?.[key] !== null && Number.isFinite(row.metrics?.[key]));
+    }
+
+    function deltaFromCumulative(rows, key) {
+      const points = rows
+        .map(row => row.metrics?.[key])
+        .filter(v => v !== null && Number.isFinite(v));
+      if (points.length < 2) return points.length ? 0 : null;
+      return Math.max(0, points[points.length - 1] - points[0]);
+    }
+
+    function integratePower(rows) {
+      let charged = 0;
+      let discharged = 0;
+      let used = false;
+
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1];
+        const current = rows[i];
+        const prevPower = prev.metrics?.power_w;
+        const currentPower = current.metrics?.power_w;
+        if (!Number.isFinite(prevPower) || !Number.isFinite(currentPower)) continue;
+
+        const elapsedHours = Math.max(0, current.timestampMs - prev.timestampMs) / 3600000;
+        const avgPower = (prevPower + currentPower) / 2;
+        const kwh = avgPower * elapsedHours / 1000;
+        if (kwh >= 0) charged += kwh;
+        else discharged += Math.abs(kwh);
+        used = true;
+      }
+
+      return used ? { charged, discharged } : { charged: null, discharged: null };
+    }
+
+    function computeMetricSummary(rows) {
+      const cumulativeCharged = deltaFromCumulative(rows, 'charged_kwh');
+      const cumulativeDischarged = deltaFromCumulative(rows, 'discharged_kwh');
+      const integrated = integratePower(rows);
+      const currents = rows
+        .map(row => row.metrics?.current_a)
+        .filter(v => v !== null && Number.isFinite(v));
+      const currentMean = currents.length
+        ? currents.reduce((a, b) => a + b, 0) / currents.length
+        : null;
+
+      return {
+        charged: cumulativeCharged ?? integrated.charged,
+        discharged: cumulativeDischarged ?? integrated.discharged,
+        currentMean
+      };
+    }
+
+    function formatKwh(value) {
+      return value === null || !Number.isFinite(value) ? '—' : `${value.toFixed(3)} kWh`;
+    }
+
+    function formatCurrent(value) {
+      return value === null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} A`;
+    }
+
+    function formatRangeTotal(rangeValue, totalValue, formatter) {
+      return `Shown: ${formatter(rangeValue)}<br><span style="font-size:13px;color:var(--muted);">Total: ${formatter(totalValue)}</span>`;
+    }
+
     function isTraceVisible(trace) {
       return trace && trace.visible !== false && trace.visible !== 'legendonly';
     }
@@ -536,6 +619,8 @@
       }
 
       const realCellCols = headers.filter(h => /^cell_\d+_mv$/i.test(h));
+      const metricCols = ['current_a', 'voltage_v', 'power_w', 'charged_kwh', 'discharged_kwh']
+        .filter(h => headers.includes(h));
       if (!realCellCols.length) {
         throw new Error('The CSV must contain at least one cell_XX_mv column.');
       }
@@ -551,6 +636,10 @@
         for (const col of realCellCols) {
           values[col] = toNumber(row[col]);
         }
+        const metrics = {};
+        for (const col of metricCols) {
+          metrics[col] = toNumber(row[col]);
+        }
 
         preparedRows.push({
           timestampMs: date.getTime(),
@@ -558,7 +647,8 @@
           localLabel: vienna.localLabel,
           inputValue: vienna.inputValue,
           dateLabel: vienna.dateLabel,
-          values
+          values,
+          metrics
         });
       }
 
@@ -571,6 +661,7 @@
       return {
         fileName,
         realCellCols,
+        metricCols,
         rows: preparedRows,
         minInputValue: preparedRows[0].inputValue,
         maxInputValue: preparedRows[preparedRows.length - 1].inputValue,
@@ -729,6 +820,11 @@
       firstValue.textContent = filtered[0].localLabel;
       lastValue.textContent = filtered[filtered.length - 1].localLabel;
       seriesValue.textContent = String(realSeriesDefs.length);
+      const shownMetrics = computeMetricSummary(filtered);
+      const totalMetrics = computeMetricSummary(currentDataset.rows);
+      chargedValue.innerHTML = formatRangeTotal(shownMetrics.charged, totalMetrics.charged, formatKwh);
+      dischargedValue.innerHTML = formatRangeTotal(shownMetrics.discharged, totalMetrics.discharged, formatKwh);
+      currentValue.innerHTML = formatRangeTotal(shownMetrics.currentMean, totalMetrics.currentMean, formatCurrent);
 
       const summaryRows = realSeriesDefs.map(def => {
         const stats = computeSeriesStats(seriesData[def.key]);
@@ -774,7 +870,8 @@
 
         datasetRangeEl.innerHTML = `
           Dataset range in Europe/Vienna: <strong>${escapeHtml(currentDataset.minLabel)}</strong> → <strong>${escapeHtml(currentDataset.maxLabel)}</strong><br>
-          Leave the timeframe fields empty to show everything.
+          Leave the timeframe fields empty to show everything.<br>
+          Metrics shown as <strong>Shown</strong> use the currently displayed timeframe; <strong>Total</strong> uses the full uploaded file.
         `;
 
         setFilterControlsEnabled(true);
