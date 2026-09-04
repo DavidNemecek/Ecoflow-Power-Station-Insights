@@ -25,7 +25,7 @@ This project was created to identify the cell behavior of an **EcoFlow Delta Pro
 ### Option 1: Docker (recommended)
 
 1. Create your `.env` (copy and fill in):
-   - `copy example.env .env`
+   - `cp example.env .env`
 2. Run the collector:
    - `docker compose pull && docker compose up -d`
    - Optional: set `LOG_LEVEL=debug` (or `info`, `warning`, `error`) in your `.env`
@@ -42,7 +42,7 @@ Optional: build the image locally instead of pulling:
 1. Install dependencies:
    - `pip install -r requirements.txt`
 2. Create your `.env` (copy and fill in):
-   - `copy example.env .env`
+   - `cp example.env .env`
 3. Run a collector:
    - `python collector/ecoflow_cells_csv.py --log-level info`
    - `python collector/ecoflow_cells_csv_dualExtentionBattery.py --log-level info`
